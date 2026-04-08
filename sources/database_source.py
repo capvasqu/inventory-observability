@@ -96,7 +96,7 @@ class DatabaseSource:
     async def collect(self, scenario: str) -> dict:
         base = SIMULATED_DB.get(scenario, SIMULATED_DB["normal"])
         db = {k: v for k, v in base.items()}
-        db["pool_usage_pct"] = round(db["pool_usage_pct"] * random.uniform(0.95, 1.05))
+        db["pool_usage_pct"] = round(db["pool_usage_pct"] * random.uniform(0.99, 1.05))
 
         warn = self.thresholds.get("warn", 80)
         crit = self.thresholds.get("critical", 95)
