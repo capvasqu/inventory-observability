@@ -1,0 +1,127 @@
+# inventory-observability/config/config.yaml
+#
+# REAL-WORLD CONFIGURATION NOTES:
+# ─────────────────────────────────────────────────────────────────────────────
+# In production, these values should come from:
+#   • Environment variables (12-factor app pattern)
+#   • Consul / etcd (for hot-reload without restart)
+#   • AWS Parameter Store / GCP Secret Manager / Azure Key Vault
+#   • Kubernetes ConfigMaps (non-sensitive) + Secrets (sensitive)
+#
+# Hot-reload: use watchdog library to re-read this file on change,
+# or expose a POST /reload endpoint in your monitoring service.
+# ─────────────────────────────────────────────────────────────────────────────
+
+monitoring:
+  # How often to run an analysis cycle in continuous mode
+  # Real-world: tune based on log volume and Claude API cost
+  interval_seconds: 30
+
+  # Number of recent log lines to include in each analysis
+  # More context = better AI analysis, but higher token usage
+  log_window_lines: 200
+
+  # Time window for correlation analysis
+  correlation_window_minutes: 15
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ALERT THRESHOLDS
+# Real-world: these map to Prometheus alerting rules (alerts.yaml),
+# or PagerDuty thresholds, or Datadog monitor conditions.
+# ─────────────────────────────────────────────────────────────────────────────
+thresholds:
+  error_rate:
+    warn: 5       # % — emit WARNING anomaly
+    critical: 15  # % — emit CRITICAL anomaly + escalate to incident-agent
+
+  latency_p95_ms:
+    warn: 500     # ms — SLA boundary
+    critical: 2000 # ms — page on-call
+
+  db_pool_usage:
+    warn: 80      # % of maximumPoolSize (HikariCP)
+    critical: 95  # % — imminent outage
+
+  requests_per_minute:
+    drop_warn: 30  # % drop from baseline → possible outage
+    spike_warn: 100 # % spike from baseline → possible attack/bug
+
+  # Minimum AI confidence to emit an anomaly alert
+  # Lower = more alerts (noisier), Higher = fewer alerts (may miss)
+  ai_confidence_min: 70  # %
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCES
+# Real-world locations for each data source
+# ─────────────────────────────────────────────────────────────────────────────
+sources:
+  logs:
+    # Real-world: /var/log/inventory/spring.log (systemd service)
+    # or stdout captured by Docker logging driver → Filebeat → Elasticsearch
+    path: "logs/spring-boot-sample.log"
+    format: "spring_boot"   # spring_boot | json | logfmt
+    # Real-world parsing: logstash grok pattern or Filebeat ingest pipeline
+
+  metrics:
+    # Real-world: GET http://localhost:8080/actuator/prometheus
+    # Scraped by Prometheus every 15s, stored in TSDB, queried via PromQL
+    endpoint: "http://localhost:8080/actuator/prometheus"
+    simulate: true  # set false when Spring Boot app is running
+
+  database:
+    # Real-world: performance_schema.events_statements_summary_by_digest (MySQL)
+    # or pg_stat_statements (PostgreSQL)
+    # Exposed via /actuator/metrics/hikari.connections.*
+    host: "localhost"
+    port: 3306
+    database: "inventory"
+    # NEVER put credentials here — use .env or Vault
+    simulate: true
+
+  github:
+    # Real-world: GitHub REST API v3
+    # Fetch recent commits, PRs, and workflow runs to correlate with incidents
+    repo: "capvasqu/inventory-management"
+    # Token from .env: GITHUB_TOKEN
+    simulate: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI ANALYSIS
+# ─────────────────────────────────────────────────────────────────────────────
+ai:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 1000
+  # Real-world: ANTHROPIC_API_KEY in .env or Kubernetes Secret
+  # Cost estimate: ~$0.003–0.015 per analysis cycle depending on evidence size
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTIFICATIONS
+# ─────────────────────────────────────────────────────────────────────────────
+notifications:
+  github_issues:
+    enabled: true
+    # Real-world: GITHUB_TOKEN in .env — needs repo scope
+    repo: "capvasqu/inventory-management"
+    min_severity: "HIGH"  # Only create issues for HIGH and CRITICAL
+
+  slack:
+    enabled: false
+    # Real-world: SLACK_WEBHOOK_URL in .env
+    # Create at: api.slack.com/apps → Incoming Webhooks
+    channel: "#alerts-inventory"
+    min_severity: "MEDIUM"
+
+  incident_agent:
+    # Real-world: HTTP POST to Project 5 endpoint
+    # Enables P7 → P5 auto-escalation pipeline
+    enabled: true
+    endpoint: "http://localhost:8001/trigger"
+    min_severity: "HIGH"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DASHBOARD (WebSocket server)
+# Real-world: served by uvicorn/gunicorn, proxied by nginx
+# ─────────────────────────────────────────────────────────────────────────────
+dashboard:
+  websocket_port: 8765
+  http_port: 3000
